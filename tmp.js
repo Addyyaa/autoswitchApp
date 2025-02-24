@@ -57,7 +57,7 @@ const scanDevice = async (ip) => {
   return null;  // 如果设备不在线或者 Telnet 端口没有开放，返回 null
 };
 
-async function scanNetwork(startIP, endIP) {
+async function scanNetwork(subnet, startIP, endIP) {
     console.log('开始扫描网络...');
     
     const workers = [];
@@ -69,7 +69,7 @@ async function scanNetwork(startIP, endIP) {
     // 创建 IP 地址数组
     const ipList = [];
     for (let i = startIP; i <= endIP; i++) {
-        ipList.push(`192.168.1.${i}`);
+        ipList.push(`${subnet}${i}`);  // 使用动态获取的网段
     }
     
     const handleResult = (result) => {
@@ -138,9 +138,9 @@ async function main() {
         console.log('当前设备的 IP 地址:', localIp);
         
         const subnet = getNetworkRange(localIp);  // 获取当前网段
-        console.log(`扫描网段: ${subnet}0-254`);
+        console.log(`扫描网段: ${subnet}`);
 
-        const devices = await scanNetwork(0, 254);
+        const devices = await scanNetwork(subnet, 0, 254);  // 传入动态获取的网段
         
         if (devices.length > 0) {
             console.log('找到的设备：', devices);
