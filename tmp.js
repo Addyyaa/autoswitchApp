@@ -1,29 +1,29 @@
 const ping = require('ping');
 const portscanner = require('portscanner');
+const { Worker } = require('worker_threads');
+const path = require('path');
 
 // 获取设备的局域网 IP
 const getLocalIp = () => {
   return new Promise((resolve, reject) => {
-    const exec = require('child_process').exec;
-    exec('ipconfig', (err, stdout, stderr) => {
-      if (err || stderr) {
-        reject(err || stderr);
-      } else {
-        // 修改正则表达式以适应不同的格式
-        const matches = stdout.match(/IPv4.*?(\d+\.\d+\.\d+\.\d+)/);
-        if (matches) {
-          resolve(matches[1]);
-        } else {
-          // 尝试其他可能的格式
-          const altMatches = stdout.match(/以太网适配器.*?IPv4.*?(\d+\.\d+\.\d+\.\d+)/s);
-          if (altMatches) {
-            resolve(altMatches[1]);
-          } else {
-            reject('无法获取本地 IP 地址');
+    try {
+      const { networkInterfaces } = require('os');
+      const nets = networkInterfaces();
+      
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+          // 跳过内部 IP 和非 IPv4 地址
+          if (net.family === 'IPv4' && !net.internal) {
+            console.log('找到IP地址:', net.address);
+            return resolve(net.address);
           }
         }
       }
-    });
+      reject(new Error('未找到有效的 IPv4 地址'));
+    } catch (error) {
+      console.error('获取IP地址时出错:', error);
+      reject(error);
+    }
   });
 };
 
@@ -46,37 +46,114 @@ const checkTelnetPort = async (ip) => {
   return status === 'open';  // 如果端口开放，返回 true
 };
 
-// 扫描整个网段
-const scanNetwork = async (subnet) => {
-  let telnetDevices = [];
-  for (let i = 1; i <= 254; i++) {
-    let ip = `${subnet}${i}`;
-    console.log(`扫描 IP: ${ip}`);
-    
-    if (await checkIP(ip)) {  // 如果设备在线
-      const isTelnetOpen = await checkTelnetPort(ip);
-      if (isTelnetOpen) {
-        telnetDevices.push(ip);  // 如果 Telnet 端口开放，加入列表
-      }
+// 扫描单个设备的 23 端口
+const scanDevice = async (ip) => {
+  if (await checkIP(ip)) {  // 如果设备在线
+    const isTelnetOpen = await checkTelnetPort(ip);
+    if (isTelnetOpen) {
+      return ip;  // 如果 Telnet 端口开放，返回设备 IP
     }
   }
-  return telnetDevices;
+  return null;  // 如果设备不在线或者 Telnet 端口没有开放，返回 null
 };
+
+async function scanNetwork(startIP, endIP) {
+    console.log('开始扫描网络...');
+    
+    const workers = [];
+    const maxWorkers = 100;
+    const results = [];
+    let scannedCount = 0;
+    const totalIPs = endIP - startIP + 1;
+    
+    // 创建 IP 地址数组
+    const ipList = [];
+    for (let i = startIP; i <= endIP; i++) {
+        ipList.push(`192.168.1.${i}`);
+    }
+    
+    const handleResult = (result) => {
+        scannedCount++;
+        if (result) {
+            results.push(result);
+        }
+        // 每扫描10个IP就输出一次进度
+        if (scannedCount % 100 === 0 || scannedCount === totalIPs) {
+            const progress = ((scannedCount / totalIPs) * 100).toFixed(1);
+            console.log(`已扫描: ${scannedCount}/${totalIPs} (${progress}%)`);
+        }
+    };
+
+    return new Promise((resolve) => {
+        let currentIndex = 0;
+
+        const startNewWorker = () => {
+            if (currentIndex >= ipList.length) {
+                if (workers.length === 0) {
+                    console.log('扫描完成！');
+                    resolve(results);
+                }
+                return;
+            }
+
+            const ip = ipList[currentIndex++];
+            console.log(`开始扫描: ${ip}`);  // 添加日志
+            
+            const worker = new Worker(path.join(__dirname, 'portScanWorker.js'));
+            workers.push(worker);
+
+            worker.on('message', ({ result }) => {
+                if (result) {
+                    console.log(`发现设备: ${result}`);  // 添加日志
+                }
+                handleResult(result);
+                
+                worker.terminate();
+                workers.splice(workers.indexOf(worker), 1);
+                startNewWorker();
+            });
+
+            worker.on('error', (error) => {
+                console.error(`扫描 ${ip} 时出错: ${error}`);  // 添加日志
+                handleResult(null);
+                worker.terminate();
+                workers.splice(workers.indexOf(worker), 1);
+                startNewWorker();
+            });
+
+            worker.postMessage({ ipRange: ip });
+        };
+
+        // 启动初始的 worker 数量
+        for (let i = 0; i < Math.min(maxWorkers, ipList.length); i++) {
+            startNewWorker();
+        }
+    });
+}
 
 // 主函数
-const main = async () => {
-  try {
-    const localIp = await getLocalIp();
-    console.log('当前设备的 IP 地址:', localIp);
-    
-    const subnet = getNetworkRange(localIp);  // 获取当前网段
-    console.log(`扫描网段: ${subnet}0-254`);
+async function main() {
+    try {
+        const localIp = await getLocalIp();
+        console.log('当前设备的 IP 地址:', localIp);
+        
+        const subnet = getNetworkRange(localIp);  // 获取当前网段
+        console.log(`扫描网段: ${subnet}0-254`);
 
-    const devices = await scanNetwork(subnet);
-    console.log('找到以下开放 Telnet 的设备:', devices);
-  } catch (error) {
-    console.error('发生错误:', error);
-  }
-};
+        const devices = await scanNetwork(0, 254);
+        
+        if (devices.length > 0) {
+            console.log('找到的设备：', devices);
+        } else {
+            console.log('未找到任何设备');
+        }
+        
+        process.exit(0);
+    } catch (error) {
+        console.error('发生错误:', error);
+        process.exit(1);
+    }
+}
 
 main();
+
