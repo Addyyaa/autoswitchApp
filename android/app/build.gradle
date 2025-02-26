@@ -1,3 +1,11 @@
+// 在文件顶部添加这些配置
+project.ext.react = [
+    enableHermes: true,
+    newArchEnabled: false,
+    fabricEnabled: false,
+    bridgelessEnabled: false
+]
+
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
@@ -84,6 +92,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        ndk {
+            abiFilters "armeabi-v7a", "x86"
+        }
+        buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", "false"
+        buildConfigField "boolean", "IS_HERMES_ENABLED", "true"
     }
     signingConfigs {
         debug {
@@ -105,6 +118,16 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+    packagingOptions {
+        pickFirst '**/*.so'
+        exclude '**/libreact_featureflagsjni.so'
+        exclude '**/libreact_render_componentregistry.so'
+        exclude '**/libreact_render_core.so'
+        exclude '**/libreact_render_debug.so'
+        exclude '**/libreact_render_graphics.so'
+        exclude '**/libreact_render_imagemanager.so'
+        exclude '**/libreact_render_mapbuffer.so'
+    }
 }
 
 dependencies {
@@ -116,4 +139,14 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    implementation project(':react-native-svg')
+    configurations.all {
+    resolutionStrategy {
+        force "com.facebook.react:react-android:0.72.7"
+        exclude group: 'com.facebook.react', module: 'react-native-gradle-plugin'
+    }
+}
+
+    
 }
