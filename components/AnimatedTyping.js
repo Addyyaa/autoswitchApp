@@ -110,7 +110,10 @@ AnimatedTypewriterText.propTypes = {
   sentences: PropTypes.arrayOf(PropTypes.string).isRequired,
   delay: PropTypes.number,
   speed: PropTypes.number,
-  style: PropTypes.object,
+  style: PropTypes.oneOfType([
+    PropTypes.object,
+    PropTypes.array
+  ]),
 };
 
 const styles = StyleSheet.create({

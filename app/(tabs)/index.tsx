@@ -88,7 +88,10 @@ function WelcomeScreen({ navigation }: {
         ] as any}
         delay={1000}
         speed={70}
-        style={[styles.typeText, { color: isDarkMode ? 'white' : 'black' }]}
+        style={{
+          ...styles.typeText,
+          color: isDarkMode ? 'white' : 'black'
+        }}
       />
       <WaveHand><Logo onPress={() => {}} /></WaveHand>
       <TouchableOpacity 
