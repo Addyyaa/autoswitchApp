@@ -20,15 +20,17 @@ const DeviceItem = ({ device, selected, onSelect, t }) => (
     onPress={() => onSelect(device)}
   >
     <View style={styles.deviceHeader}>
-      <Text style={styles.deviceHeaderText}>{device.ip}</Text>
+      <Text style={styles.deviceHeaderText}>{t('home.screen')}{device.deviceId || t('home.unknownDevice')}</Text>
       <Text style={selected ? styles.selectedText : styles.selectText}>
         {selected ? t('cancel') : t('select')}
       </Text>
     </View>
-    <Text style={styles.deviceSubText}>
-      {t('home.type')} {device.deviceType || t('home.telnetDevice')}
-    </Text>
-    <Text style={styles.deviceSubText}>ID: {device.deviceId || t('home.unknownDevice')}</Text>
+    <View style={[styles.deviceSubText, {flexDirection: 'row', justifyContent: 'space-between'}]}>
+        <Text style={styles.deviceSubText}>
+        {t('home.type')} {device.deviceType || t('home.telnetDevice')}
+        </Text>
+        <Text style={styles.deviceSubText}>IP: {device.ip}</Text>
+    </View>
   </TouchableOpacity>
 );
 
@@ -248,14 +250,6 @@ export const DeviceScanner = () => {
         </View>
       )}
       
-      {/* 设备信息 */}
-      {selectedDevice && (
-        <View style={styles.deviceInfoContainer}>
-          <Text style={styles.deviceInfoText}>
-            {t('home.selected')} {selectedDevice.ip} ({selectedDevice.deviceId || t('home.unknownDevice')})
-          </Text>
-        </View>
-      )}
       
       {/* 操作按钮 */}
       <View style={styles.buttonRow}>
@@ -280,12 +274,13 @@ export const DeviceScanner = () => {
           style={[
             styles.versionButton, 
             styles.halfButton,
-            (!selectedDevice || scanning || processingVersion) && styles.buttonDisabled
+            (!selectedDevice || scanning || processingVersion) && styles.buttonDisabled,
+            !selectedDevice && {backgroundColor: 'gray'}
           ]}
           onPress={handleSwitchVersionPress}
           disabled={!selectedDevice || scanning || processingVersion}
         >
-          <View style={styles.buttonContent}>
+          <View style={[styles.buttonContent]}>
             <Text style={styles.buttonText}>
               {t('switchVersion')}
             </Text>
@@ -403,9 +398,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#eeeeee',
   },
   buttonText: {
-    color: 'white',
+    color: '#eee',
     fontSize: 16,
-    fontWeight: 'bold',
     marginLeft: 5,
   },
   list: {

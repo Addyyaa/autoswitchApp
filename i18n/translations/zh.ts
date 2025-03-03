@@ -16,7 +16,7 @@ export default {
     startScan: '开始扫描',
     scanningProgress: '扫描中...',
     noDevices: '未发现设备',
-    screen: '屏幕:',
+    screen: '屏幕：',
     type: '类型:',
     ip: 'IP:',
     telnetDevice: 'Telnet设备',
