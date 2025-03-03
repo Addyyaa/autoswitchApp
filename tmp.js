@@ -411,7 +411,7 @@ export class NetworkScanner {
     try {
       const {
         batchSize = 50,
-        timeout = 1000,
+        timeout = 700,
         progressCallback,
         telnetCredentials = this.TELNET_CREDENTIALS,
         abortSignal,

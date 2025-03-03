@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Switch } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, Switch, useColorScheme } from 'react-native';
 import { NetworkScanner } from '../tmp';
 import { useTranslation } from 'react-i18next';
 import { useFocusEffect } from '@react-navigation/native';
@@ -14,6 +14,7 @@ export default function Home({ navigation }) {
   const [scannedCount, setScannedCount] = useState(0);
   const [totalIPs, setTotalIPs] = useState(0);
   const [advancedMode, setAdvancedMode] = useState(false);
+  const isDarkMode = useColorScheme() === 'dark';
   // const [portsToScan, setPortsToScan] = useState([22, 23, 80, 443]);
   const [portsToScan, setPortsToScan] = useState([23]);
   const { t } = useTranslation();
@@ -105,6 +106,7 @@ export default function Home({ navigation }) {
     
     try {
       const ip = await NetworkScanner.getLocalIp();
+      
       const subnetMask = await NetworkScanner.getSubnetMask();
       
       console.log(`扫描网络 IP:${ip}, 子网掩码:${subnetMask}`);
@@ -168,20 +170,20 @@ export default function Home({ navigation }) {
         onPress={() => toggleDeviceSelection(item.ip)}
       >
         <View style={styles.deviceHeader}>
-          <Text style={styles.deviceHeaderText}>
+          <Text style={[styles.deviceHeaderText]}>
             {t('home.screen')} {item.deviceId || '---'}
           </Text>
-          <Text style={styles.deviceHeaderText}>
+          <Text style={[styles.deviceHeaderText]}>
             {t('home.ip')} {item.ip}
           </Text>
         </View>
         
-        <Text style={styles.deviceSubText}>
+        <Text style={[styles.deviceSubText]}>
           {t('home.type')} {item.deviceType || t('home.unknownDevice')}
         </Text>
         
         {openPortsList.length > 0 && (
-          <Text style={styles.deviceSubText}>
+          <Text style={[styles.deviceSubText, isDarkMode ? { color: 'white' } : { color: 'black' }]}>
             {t('home.openPorts')} {openPortsList.join(', ')}
           </Text>
         )}
@@ -191,12 +193,12 @@ export default function Home({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.infoContainer}>
-        <Text style={styles.text}>{t('home.localIp')} {localIp}</Text>
-        <Text style={styles.text}>{t('home.subnetMask')} {subnetMask}</Text>
+      <View style={[styles.infoContainer, isDarkMode ? { backgroundColor: '#1c1c1c' } : { backgroundColor: '#f9f9f9' }]}>
+        <Text style={[styles.text, isDarkMode ? { color: 'white' } : { color: 'black' }]}>{t('home.localIp')} {localIp}</Text>
+        <Text style={[styles.text, isDarkMode ? { color: 'white' } : { color: 'black' }]}>{t('home.subnetMask')} {subnetMask}</Text>
         
         <View style={styles.settingsRow}>
-          <Text style={styles.text}>{t('home.advancedMode')}</Text>
+          <Text style={[styles.text, isDarkMode ? { color: 'white' } : { color: 'black' }]}>{t('home.advancedMode')}</Text>
           <Switch 
             value={advancedMode} 
             onValueChange={setAdvancedMode}
@@ -210,12 +212,12 @@ export default function Home({ navigation }) {
         )}
         
         {isScanning && (
-          <Text style={styles.text}>
+          <Text style={[styles.text, isDarkMode ? { color: 'white' } : { color: 'black' }]}>
             {t('home.scanning')} {progress}% ({scannedCount}/{totalIPs})
           </Text>
         )}
-        <Text style={styles.text}>{t('home.discovered')} {devices.length} {t('home.devices')}</Text>
-        <Text style={styles.text}>{t('home.selected')} {selectedDevices.length} {t('home.devices')}</Text>
+        <Text style={[styles.text, isDarkMode ? { color: 'white' } : { color: 'black' }]}>{t('home.discovered')} {devices.length} {t('home.devices')}</Text>
+        <Text style={[styles.text, isDarkMode ? { color: 'white' } : { color: 'black' }]}>{t('home.selected')} {selectedDevices.length} {t('home.devices')}</Text>
       </View>
 
       <TouchableOpacity 
@@ -225,11 +227,11 @@ export default function Home({ navigation }) {
       >
         {isScanning ? (
           <View style={styles.buttonContent}>
-            <ActivityIndicator color="white" size="small" />
-            <Text style={styles.buttonText}>{t('home.scanningProgress')} ({progress}%)</Text>
+            <ActivityIndicator color="#32b8a0" size="small" />
+            <Text style={[styles.buttonText, {color: 'black'}]}>{t('home.scanningProgress')} ({progress}%)</Text>
           </View>
         ) : (
-          <Text style={styles.buttonText}>{t('home.startScan')}</Text>
+          <Text style={[styles.buttonText, isDarkMode ? { color: 'white' } : { color: 'black' }]}>{t('home.startScan')}</Text>
         )}
       </TouchableOpacity>
 
@@ -240,7 +242,7 @@ export default function Home({ navigation }) {
         style={styles.list}
         ListEmptyComponent={
           <View style={styles.emptyList}>
-            <Text>{isScanning ? t('home.scanningProgress') : t('home.noDevices')}</Text>
+            <Text style={[styles.text, isDarkMode ? { color: 'black' } : { color: 'black' }]}>{isScanning ? t('home.scanningProgress') : t('home.noDevices')}</Text>
           </View>
         }
       />
@@ -261,7 +263,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   button: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#32b8a0',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -273,7 +275,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#eeeeee',
   },
   buttonText: {
     color: 'white',
@@ -288,12 +290,12 @@ const styles = StyleSheet.create({
     padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#eeee',
     borderRadius: 8,
     marginBottom: 8,
   },
   selectedDeviceItem: {
-    backgroundColor: '#e6f7ff',
+    backgroundColor: '#a0ddd2ed',
     borderColor: '#1890ff',
     borderWidth: 1,
   },
