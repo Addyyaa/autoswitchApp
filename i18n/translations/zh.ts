@@ -22,5 +22,20 @@ export default {
     telnetDevice: 'Telnet设备',
     unknownDevice: '未知设备',
     openPorts: '开放端口:'
-  }
+  },
+  pleaseWait: '请耐心等待，这可能需要几分钟...',
+  scanErrorMessage: '扫描过程中出错: {{message}}',
+  select: '选择',
+  success: '成功',
+  failure: '失败',
+  error: '错误',
+  confirm: '确定',
+  selectVersion: '选择版本',
+  selectVersionPrompt: '请选择要切换的版本',
+  pleaseSelectDevice: '请先选择设备后再切换版本',
+  overseasVersion: '海外版',
+  chinaVersion: '中国大陆版',
+  switching: '切换中...',
+  switchVersion: '切换版本',
+  cancel: '取消'
 }; 

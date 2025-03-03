@@ -22,5 +22,20 @@ export default {
     telnetDevice: 'Telnet Device',
     unknownDevice: 'Unknown Device',
     openPorts: 'Open Ports:'
-  }
+  },
+  pleaseWait: 'Please wait, this might take a few minutes...',
+  scanErrorMessage: 'Error occurred during scanning: {{message}}',
+  select: 'Select',
+  success: 'Success',
+  failure: 'Failure',
+  error: 'Error',
+  confirm: 'OK',
+  selectVersion: 'Select Version',
+  selectVersionPrompt: 'Please select the version to switch to',
+  pleaseSelectDevice: 'Please select a device first',
+  overseasVersion: 'International Version',
+  chinaVersion: 'China Version',
+  switching: 'Switching...',
+  switchVersion: 'Switch Version',
+  cancel: 'Cancel'
 }; 
