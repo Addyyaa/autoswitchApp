@@ -37,5 +37,13 @@ export default {
   chinaVersion: 'China Version',
   switching: 'Switching...',
   switchVersion: 'Switch Version',
-  cancel: 'Cancel'
+  cancel: 'Cancel',
+  switchingDevice: 'Device',
+  targetVersion: 'Target Version',
+  result: 'Result',
+  details: 'Details',
+  switchSuccess: 'Successfully switched',
+  switchFailure: 'Switching may have failed',
+  switchingErrorDevice: 'Error when switching device',
+  debugInfo: 'Debug Information'
 }; 

@@ -197,13 +197,15 @@ export class TelnetCommand {
       
       return {
         success: true,
-        results
+        results,
+        debugInfo: { connectionEstablished: true }  // 添加调试信息
       };
     } catch (error) {
       console.error(`执行命令序列时出错: ${error.message}`);
       return {
         success: false,
-        error: error.message
+        error: error.message,
+        debugInfo: { errorDetails: error.stack }  // 添加错误详情
       };
     } finally {
       if (connection) {

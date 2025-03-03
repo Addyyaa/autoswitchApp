@@ -77,11 +77,25 @@ export class NetworkScanner {
     // ... existing code ...
   }
   
+  // 添加静态方法来重置扫描锁
+  static resetScanLock() {
+    if (this._scanLock) {
+      console.log('手动重置扫描锁');
+      this._scanLock = false;
+      return true;
+    }
+    return false;
+  }
+  
   // 停止当前扫描
   static stopScan() {
     if (this._abortController) {
       this._abortController.abort();
       console.log('扫描已手动中止');
+      
+      // 确保在中止扫描时也释放锁
+      this._scanLock = false;
+      
       return true;
     }
     return false;

@@ -57,6 +57,7 @@ export const DeviceScanner = () => {
   const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [processingVersion, setProcessingVersion] = useState(false);
+  const [switchingMessage, setSwitchingMessage] = useState('');
   
   // 网络信息状态
   const [localIP, setLocalIP] = useState('');
@@ -121,20 +122,54 @@ export const DeviceScanner = () => {
         progressCallback: (percent, scanned, total, foundDevices) => {
           setProgress(percent);
           setCurrentScan({ current: scanned, total: total });
-          if (foundDevices) {
+          
+          // 修复：确保设备被正确添加到UI
+          if (foundDevices && foundDevices.length > 0) {
+            console.log(`进度回调: 发现了 ${foundDevices.length} 个设备`);
             discoveredDevices = [...foundDevices];
-            setDevices(discoveredDevices);
+            setDevices(prev => {
+              // 检查是否有新设备被添加
+              if (foundDevices.length > prev.length) {
+                console.log(`设备列表更新: ${prev.length} -> ${foundDevices.length}`);
+                return [...foundDevices];
+              }
+              return prev;
+            });
           }
         },
         abortSignal: NetworkScanner._abortController.signal
       });
       
-      // 确保结果不会覆盖回调中已更新的设备列表
-      if (result && (!discoveredDevices.length || result.devices?.length > discoveredDevices.length)) {
-        setDevices(result.devices || []);
+      // 确保最终结果不会丢失设备
+      console.log(`扫描完成: API返回${result?.devices?.length || 0}个设备, 进度回调中发现${discoveredDevices.length}个设备`);
+      
+      if (result?.devices?.length > 0) {
+        if (result.devices.length > discoveredDevices.length) {
+          console.log(`使用API返回的设备列表: ${result.devices.length}个设备`);
+          setDevices(result.devices);
+        } else if (discoveredDevices.length > 0 && devices.length === 0) {
+          console.log(`使用进度回调中的设备列表: ${discoveredDevices.length}个设备`);
+          setDevices(discoveredDevices);
+        }
       }
       
-      console.log(`扫描${result?.aborted ? '已中止' : '完成'}，发现 ${devices.length} 个设备`);
+      // 如果扫描完成但没有设备，检查是否有成功登录的日志
+      if ((devices.length === 0 || discoveredDevices.length === 0) && result?.debugInfo?.loginSuccessIPs?.length > 0) {
+        console.log(`扫描完成但UI无设备, 尝试从登录成功的IP创建设备列表`);
+        // 从登录成功的IP创建默认设备对象
+        const recoveredDevices = result.debugInfo.loginSuccessIPs.map(ip => ({
+          ip,
+          deviceId: 'unknown',
+          deviceType: t('home.telnetDevice')
+        }));
+        
+        if (recoveredDevices.length > 0) {
+          console.log(`从登录成功记录恢复了 ${recoveredDevices.length} 个设备`);
+          setDevices(recoveredDevices);
+        }
+      }
+      
+      console.log(`扫描${result?.aborted ? '已中止' : '完成'}，最终发现 ${devices.length} 个设备`);
     } catch (error) {
       console.error('扫描出错:', error);
       Alert.alert(
@@ -185,16 +220,18 @@ export const DeviceScanner = () => {
     );
   };
 
-  // 执行版本切换
+  // 执行版本切换 - 改进提示逻辑
   const switchVersion = async (versionType) => {
     if (!selectedDevice) {
       return;
     }
     
     setProcessingVersion(true);
+    setSwitchingMessage(t('switching') + ' ' + selectedDevice.ip);
     
     try {
-      console.log(`开始将设备 ${selectedDevice.ip} 切换到${versionType === 'OVERSEAS' ? t('overseasVersion') : t('chinaVersion')}...`);
+      const versionName = versionType === 'OVERSEAS' ? t('overseasVersion') : t('chinaVersion');
+      console.log(`开始将设备 ${selectedDevice.ip} 切换到${versionName}...`);
       
       // 保留选中设备的引用
       const currentDevice = {...selectedDevice};
@@ -207,17 +244,30 @@ export const DeviceScanner = () => {
       // 确保选择状态不丢失
       setSelectedDevice(currentDevice);
       
-      // 显示结果提示
+      // 显示详细的结果提示
+      let alertTitle = result.success ? t('success') : t('failure');
+      let alertMessage = `${t('switchingDevice')}: ${selectedDevice.ip}\n`;
+      alertMessage += `${t('targetVersion')}: ${versionName}\n`;
+      alertMessage += `${t('result')}: ${result.success ? t('switchSuccess') : t('switchFailure')}\n`;
+      
+      if (result.details) {
+        alertMessage += `${t('details')}: ${result.details}`;
+      }
+      
       Alert.alert(
-        result.success ? t('success') : t('failure'),
-        result.message,
+        alertTitle,
+        alertMessage,
         [{ text: t('confirm') }]
       );
     } catch (error) {
       console.error('切换版本时出错:', error);
-      Alert.alert(t('error'), `${t('switching')} ${error.message}`);
+      Alert.alert(
+        t('error'), 
+        `${t('switchingErrorDevice')}: ${selectedDevice.ip}\n${error.message}`
+      );
     } finally {
       setProcessingVersion(false);
+      setSwitchingMessage('');
     }
   };
 
@@ -307,10 +357,10 @@ export const DeviceScanner = () => {
         }
       />
       
-      {/* 版本切换时的全屏加载指示器 */}
-      <LoadingOverlay
-        visible={processingVersion}
-        message={t('pleaseWait')}
+      {/* 版本切换加载遮罩 - 更新以显示正在处理的设备 */}
+      <LoadingOverlay 
+        visible={processingVersion} 
+        message={switchingMessage || t('switching')}
       />
     </View>
   );

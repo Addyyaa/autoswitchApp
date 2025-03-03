@@ -37,5 +37,13 @@ export default {
   chinaVersion: '中国大陆版',
   switching: '切换中...',
   switchVersion: '切换版本',
-  cancel: '取消'
+  cancel: '取消',
+  switchingDevice: '设备',
+  targetVersion: '目标版本',
+  result: '结果',
+  details: '详细信息',
+  switchSuccess: '切换成功',
+  switchFailure: '切换可能失败',
+  switchingErrorDevice: '切换设备时出错',
+  debugInfo: '调试信息'
 }; 
