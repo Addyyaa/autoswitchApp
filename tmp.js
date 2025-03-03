@@ -23,6 +23,9 @@ export class NetworkScanner {
   // 添加静态属性作为全局锁
   static _scanLock = false;
 
+  // 添加中止扫描功能
+  static _abortController = null;
+
   static async getLocalIp() {
     try {
       const ip = await NetworkInfo.getIPV4Address();
@@ -397,7 +400,17 @@ export class NetworkScanner {
     });
   }
   
-  // 扫描整个网络寻找可登录的Telnet设备
+  // 停止当前扫描
+  static stopScan() {
+    if (this._abortController) {
+      this._abortController.abort();
+      console.log('扫描已手动中止');
+      return true;
+    }
+    return false;
+  }
+
+  // 修改扫描方法以支持中止
   static async scanNetwork(ip, subnetMask, options = {}) {
     // 检查全局锁，防止并发扫描
     if (this._scanLock) {
