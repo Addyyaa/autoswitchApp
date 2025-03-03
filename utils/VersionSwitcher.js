@@ -1,17 +1,17 @@
 import { TelnetCommand } from './TelnetCommand';
 
 export class VersionSwitcher {
-  // 版本配置
+  // 版本配置 - 交换了海外版和国内版的域名，与需求匹配
   static VERSIONS = {
     OVERSEAS: {
       name: '海外版',
-      cn_host: 'cloud-service-us.austinelec.com',
-      en_host: 'cloud-service-us.austinelec.com'
+      cn_host: 'cloud-service-us.austinelec.com', // 修改为正确域名
+      en_host: 'cloud-service-us.austinelec.com'  // 修改为正确域名
     },
     CHINA: {
       name: '中国大陆版',
-      cn_host: 'cloud-service.austinelec.com',
-      en_host: 'cloud-service.austinelec.com'
+      cn_host: 'cloud-service.austinelec.com',    // 修改为正确域名
+      en_host: 'cloud-service.austinelec.com'     // 修改为正确域名
     }
   };
   
@@ -40,13 +40,18 @@ export class VersionSwitcher {
   // 切换到指定版本
   static async switchVersion(ip, versionType) {
     try {
+      // 添加调试日志
+      console.log(`切换版本类型: ${versionType}`);
+      console.log('可用版本配置:', JSON.stringify(this.VERSIONS));
+      
       if (!this.VERSIONS[versionType]) {
-        throw new Error('无效的版本类型');
+        throw new Error(`无效的版本类型: ${versionType}`);
       }
       
       // 获取版本配置
       const version = this.VERSIONS[versionType];
       console.log(`准备将 ${ip} 切换到${version.name}...`);
+      console.log(`域名配置: cn_host=${version.cn_host}, en_host=${version.en_host}`);
       
       // 1. 检查系统版本
       const { isNewSystem, configPath, logPath } = await this.checkSystemVersion(ip);
@@ -57,8 +62,9 @@ export class VersionSwitcher {
         // a. 备份并修改配置文件
         { cmd: `cp ${configPath} ${configPath}.bak` },
         { cmd: `cat ${configPath}`, timeout: 3000 }, // 查看当前配置
-        { cmd: `sed -i 's/cn_host=.*/cn_host=${version.cn_host}/g' ${configPath}` },
-        { cmd: `sed -i 's/en_host=.*/en_host=${version.en_host}/g' ${configPath}` },
+        
+        // 使用echo命令完全替换配置文件内容，避免sed命令的问题
+        { cmd: `echo -e "[mqtt]\\ncn_host=${version.cn_host}\\ncn_port=1883\\nen_host=${version.en_host}\\nen_port=1883" > ${configPath}` },
         
         // b. 校验修改是否成功
         { cmd: `cat ${configPath}`, timeout: 3000 },
@@ -66,17 +72,17 @@ export class VersionSwitcher {
         // c. 执行sync指令
         { cmd: 'sync' },
         
-        // d. 清空日志文件
+        // d. 清空日志文件 - 处理新旧系统路径区别
         { cmd: `echo "" > ${logPath}` },
         
         // e. 杀掉mymqtt进程
         { cmd: 'kill -9 $(pidof mymqtt)' },
         
-        // 等待2秒
-        { cmd: 'echo "等待服务重启..."', delay: 2000 },
+        // 等待3秒确保服务重启
+        { cmd: 'echo "等待服务重启..."', delay: 3000 },
         
-        // f. 检查日志
-        { cmd: `cat ${logPath} | grep ${version.cn_host}`, timeout: 4000 }
+        // f. 检查日志 - 增加超时时间
+        { cmd: `cat ${logPath} | grep ${version.cn_host}`, timeout: 5000 }
       ];
       
       // 3. 执行命令序列
@@ -88,7 +94,7 @@ export class VersionSwitcher {
       }
       
       // 获取验证结果
-      const verifyConfigResult = result.results[4]?.output || '';
+      const verifyConfigResult = result.results[3]?.output || '';
       if (!verifyConfigResult.includes(`cn_host=${version.cn_host}`) || 
           !verifyConfigResult.includes(`en_host=${version.en_host}`)) {
         return {

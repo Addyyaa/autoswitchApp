@@ -46,6 +46,7 @@ export const DeviceScanner = () => {
     setScanning(true);
     setProgress(0);
     setDevices([]);
+    setSelectedDevice(null); // 重置选中的设备
     
     try {
       const ip = await NetworkScanner.getLocalIp();
@@ -57,11 +58,12 @@ export const DeviceScanner = () => {
       const result = await NetworkScanner.scanNetwork(ip, subnet, {
         progressCallback: (percent, scanned, total, foundDevices) => {
           setProgress(percent);
-          setDevices(foundDevices || []);
+          setDevices(foundDevices || []); // 添加空数组默认值
         },
         abortSignal: NetworkScanner._abortController.signal
       });
       
+      // 添加空数组默认值，防止result.devices为undefined
       setDevices(result?.devices || []);
       console.log(`扫描${result?.aborted ? '已中止' : '完成'}，发现 ${result?.devices?.length || 0} 个设备`);
     } catch (error) {
@@ -73,18 +75,19 @@ export const DeviceScanner = () => {
   };
   
   const handleDeviceSelect = (device) => {
-    setSelectedDevice(device.ip === selectedDevice?.ip ? null : device);
+    console.log(`选择设备: ${device.ip}`);
+    setSelectedDevice(device);
   };
   
   const handleSwitchVersionPress = () => {
     if (!selectedDevice) {
-      Alert.alert('提示', '请先选择屏幕后再切换版本');
+      Alert.alert('提示', '请先选择设备后再切换版本');
       return;
     }
     
     Alert.alert(
+      '选择版本',
       '请选择要切换的版本',
-      `将为 ${selectedDevice.ip} (${selectedDevice.deviceId || '未知ID'}) 切换版本`,
       [
         {
           text: '海外版',
@@ -103,21 +106,35 @@ export const DeviceScanner = () => {
   };
   
   const switchVersion = async (versionType) => {
-    if (processingVersion) return;
+    if (!selectedDevice) {
+      return;
+    }
     
     setProcessingVersion(true);
-    Alert.alert('处理中', '正在切换版本，请稍候...');
     
     try {
+      console.log(`开始将设备 ${selectedDevice.ip} 切换到${versionType === 'OVERSEAS' ? '海外版' : '中国大陆版'}...`);
+      
+      // 保留选中设备的引用
+      const currentDevice = {...selectedDevice};
+      
+      // 执行版本切换
       const result = await VersionSwitcher.switchVersion(selectedDevice.ip, versionType);
       
+      console.log('切换结果:', result);
+      
+      // 确保选择状态不丢失
+      setSelectedDevice(currentDevice);
+      
+      // 显示结果提示
       Alert.alert(
         result.success ? '成功' : '失败',
-        result.message
+        result.message,
+        [{ text: '确定' }]
       );
     } catch (error) {
-      console.error('切换版本出错:', error);
-      Alert.alert('错误', `切换版本时发生错误: ${error.message}`);
+      console.error('切换版本时出错:', error);
+      Alert.alert('错误', `切换版本时出错: ${error.message}`);
     } finally {
       setProcessingVersion(false);
     }
@@ -132,8 +149,15 @@ export const DeviceScanner = () => {
   
   return (
     <View style={styles.container}>
+      <View style={styles.infoContainer}>
+        <Text style={styles.text}>
+          找到 {devices?.length || 0} 个设备
+          {selectedDevice ? ` (已选择: ${selectedDevice.ip})` : ''}
+        </Text>
+      </View>
+      
       <View style={styles.buttonRow}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.button, 
             styles.halfButton,
@@ -143,30 +167,30 @@ export const DeviceScanner = () => {
           disabled={processingVersion}
         >
           <View style={styles.buttonContent}>
-            {scanning && <ActivityIndicator color="white" size="small" style={{marginRight: 10}} />}
-            <Text style={styles.buttonText}>{getScanButtonText()}</Text>
+            {scanning && <ActivityIndicator color="#fff" size="small" style={{marginRight: 8}} />}
+            <Text style={styles.buttonText}>
+              {scanning ? '扫描中...点击停止' : '扫描设备'}
+            </Text>
           </View>
         </TouchableOpacity>
         
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
             styles.versionButton, 
             styles.halfButton,
-            (scanning || processingVersion) && styles.buttonDisabled
+            (!selectedDevice || scanning || processingVersion) && styles.buttonDisabled
           ]}
           onPress={handleSwitchVersionPress}
-          disabled={scanning || processingVersion}
+          disabled={!selectedDevice || scanning || processingVersion}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.buttonText}>切换版本</Text>
+            {processingVersion && <ActivityIndicator color="#fff" size="small" style={{marginRight: 8}} />}
+            <Text style={styles.buttonText}>
+              {processingVersion ? '切换中...' : '切换版本'}
+            </Text>
           </View>
         </TouchableOpacity>
       </View>
-      
-      <Text style={styles.text}>
-        找到 {devices?.length || 0} 个设备
-        {selectedDevice ? ` (已选择: ${selectedDevice.ip})` : ''}
-      </Text>
       
       <FlatList
         data={devices || []}
