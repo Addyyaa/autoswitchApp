@@ -372,9 +372,9 @@ const styles = StyleSheet.create({
     padding: 15,
   },
   infoContainer: {
-    marginBottom: 15,
+    marginBottom: "3%",
     backgroundColor: '#f5f5f5',
-    padding: 12,
+    padding: "3%",
     borderRadius: 8,
   },
   infoRow: {
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontWeight: 'bold',
-    marginRight: 10,
+    marginRight: "3%",
     fontSize: 14,
     color: '#333',
   },
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#32b8a0',
   },
   deviceInfoContainer: {
-    marginBottom: 15,
+    marginBottom: "5%",
     backgroundColor: '#e6f7ff',
     padding: 12,
     borderRadius: 8,
@@ -437,7 +437,8 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 15,
+    justifyContent: 'center',
+    marginBottom: "5%",
     width: "auto"
   },
   buttonContent: {
@@ -451,18 +452,18 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#eee',
     fontSize: 16,
-    marginLeft: 5,
+    marginLeft: "2%",
   },
   list: {
     flex: 1,
   },
   deviceItem: {
-    padding: 15,
+    padding: "4%",
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
     backgroundColor: '#eeeeee',
     borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: "3%",
   },
   selectedDeviceItem: {
     backgroundColor: '#a0ddd2ed',
@@ -472,7 +473,7 @@ const styles = StyleSheet.create({
   deviceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: "2%",
   },
   deviceHeaderText: {
     fontSize: 16,
@@ -481,7 +482,7 @@ const styles = StyleSheet.create({
   deviceSubText: {
     fontSize: 14,
     color: '#666',
-    marginTop: 4,
+    marginTop: "1%",
   },
   selectedText: {
     color: '#1890ff',
@@ -496,10 +497,11 @@ const styles = StyleSheet.create({
   },
   versionButton: {
     backgroundColor: '#4a90e2',
-    padding: 15,
+    padding: "2%",
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 15,
+    justifyContent: 'center',
+    marginBottom: "5%",
   },
   buttonRow: {
     flexDirection: 'row',
@@ -516,7 +518,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingContainer: {
-    padding: 20,
+    padding: "3%",
     borderRadius: 10,
     alignItems: 'center',
     backgroundColor: 'transparent',
