@@ -13,13 +13,37 @@ const getDeviceLanguage = () => {
                    NativeModules.SettingsManager?.settings?.AppleLocale || 
                    NativeModules.SettingsManager?.settings?.AppleLanguages?.[0];
   } else {
-    deviceLanguage = NativeModules.I18nManager?.localeIdentifier;
+    // Android 的语言检测更新 - 尝试多种方法
+    deviceLanguage = 
+      NativeModules.I18nManager?.localeIdentifier ||
+      NativeModules.I18nManager?.locale ||
+      NativeModules.SettingsManager?.settings?.locale ||
+      'zh';
+    
+    console.log('Android 原始语言值:', deviceLanguage);
   }
   
   console.log('设备语言原始值:', deviceLanguage);
   
-  // 转换为简单语言代码 (例如 'en', 'zh')
-  return deviceLanguage ? deviceLanguage.slice(0, 2) : 'en';
+  // 处理语言代码格式
+  if (deviceLanguage) {
+    // 处理类似 zh-CN, zh_CN, zh_Hans_CN 等格式
+    if (deviceLanguage.includes('-')) {
+      deviceLanguage = deviceLanguage.split('-')[0];
+    }
+    if (deviceLanguage.includes('_')) {
+      deviceLanguage = deviceLanguage.split('_')[0];
+    }
+    
+    // 如果检测到 zh 的任何变体，统一返回 zh
+    if (deviceLanguage.toLowerCase().startsWith('zh')) {
+      return 'zh';
+    }
+    
+    return deviceLanguage.slice(0, 2).toLowerCase();
+  }
+  
+  return 'en'; // 默认返回英文
 };
 
 const detectedLanguage = getDeviceLanguage();
