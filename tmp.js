@@ -199,7 +199,7 @@ export class NetworkScanner {
   // 从设备读取配置文件获取设备ID
   static async getDeviceId(ip, socket) {
     console.log(`尝试获取 ${ip} 的设备ID...`);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const buffer = [];
       let readTimeout = null;
       
@@ -208,8 +208,9 @@ export class NetworkScanner {
       // 设置超时
       readTimeout = setTimeout(() => {
         console.log(`读取设备ID超时: ${ip}`);
+        socket.removeListener('data', dataHandler);
         resolve(null); // 超时返回null
-      }, 2000);
+      }, 4000);  // 增加超时时间
       
       // 处理数据响应
       const dataHandler = (data) => {
@@ -227,6 +228,17 @@ export class NetworkScanner {
             socket.removeListener('data', dataHandler);
             resolve(match[1]);
           }
+          
+          // 检查是否为命令不存在或文件不存在的情况
+          if (fullText.includes('No such file') || 
+              fullText.includes('not found') ||
+              fullText.includes('cat:') || 
+              fullText.includes('command not found')) {
+            console.log(`设备ID文件不存在: ${ip}`);
+            clearTimeout(readTimeout);
+            socket.removeListener('data', dataHandler);
+            resolve('未找到ID文件');
+          }
         } catch (e) {
           console.error(`处理设备ID数据时出错: ${e.message}`);
         }
@@ -241,14 +253,15 @@ export class NetworkScanner {
       } catch (e) {
         console.error(`发送读取ID命令时出错: ${e.message}`);
         clearTimeout(readTimeout);
-        resolve(null);
+        socket.removeListener('data', dataHandler);
+        reject(e);
       }
     });
   }
 
   // 尝试Telnet登录
-  static async tryTelnetLogin(ip, credentials = this.TELNET_CREDENTIALS, timeout = 3000) {
-    console.log(`尝试Telnet登录 ${ip}:23 用户名: ${credentials.username}`);
+  static async tryTelnetLogin(ip, credentials = this.TELNET_CREDENTIALS, timeout = 5000) {
+    console.log(`尝试连接到 ${ip}:23...`);
     
     return new Promise((resolve) => {
       const buffer = [];
@@ -259,11 +272,36 @@ export class NetworkScanner {
       let socket = null;
       let deviceId = null;
       let timer = null;
+      let isGettingDeviceId = false;
+      let retryCount = 0;
+      let hadResponse = false;
       
-      const closeConnection = (success) => {
+      // 发送额外命令以激活shell
+      const sendExtraCommands = () => {
+        if (connectionClosed || loginSuccessful) return;
+        
+        console.log(`向 ${ip} 发送额外命令以激活shell`);
+        try {
+          // 发送多个回车和常用命令尝试激活shell
+          socket.write('\r\n');
+          
+          // 设置检查登录成功的延迟器
+          setTimeout(() => {
+            if (!connectionClosed && !loginSuccessful && buffer.length > 0) {
+              // 如果依然未检测到登录成功，但有数据返回，尝试发送"ls"命令
+              console.log(`${ip} 发送ls命令尝试触发提示符`);
+              socket.write('ls\r\n');
+            }
+          }, 800);
+        } catch(e) {
+          console.error(`发送额外命令时出错: ${e.message}`);
+        }
+      };
+      
+      // 重新实现关闭连接函数，包含完整的重试逻辑
+      const closeConnection = (success, shouldRetry = false) => {
         if (!connectionClosed) {
           connectionClosed = true;
-          console.log(`关闭Telnet连接 ${ip}:23, 登录${success ? '成功' : '失败'}`);
           
           // 清除计时器
           if (timer) {
@@ -271,103 +309,280 @@ export class NetworkScanner {
             timer = null;
           }
           
-          if (socket) {
-            try {
-              // 首先移除所有事件监听器，避免事件循环和内存泄漏
-              socket.removeAllListeners();
-              // 确保连接结束
-              socket.end();
-              // 给end一些时间处理
-              setTimeout(() => {
-                try {
-                  // 然后强制销毁
-                  socket.destroy();
-                  socket = null;
-                } catch (e) {
-                  console.error(`销毁socket时出错: ${e.message}`);
-                } finally {
-                  // 无论如何确保resolve
-                  resolve({success, deviceId});
-                }
-              }, 50);
-            } catch (e) {
-              console.error(`关闭socket时出错: ${e.message}`);
+          console.log(`关闭Telnet连接 ${ip}:23, 登录${success ? '成功' : '失败'}`);
+          
+          // 处理重试逻辑
+          if (!success && shouldRetry && hadResponse && retryCount < 3) {
+            retryCount++;
+            console.log(`正在为 ${ip} 开始第 ${retryCount} 次重试...`);
+            
+            // 确保socket被清理
+            if (socket) {
+              try {
+                socket.removeAllListeners();
+                socket.end();
+                socket.destroy();
+                socket = null;
+              } catch (e) {
+                console.error(`重试前清理socket出错: ${e.message}`);
+              }
+            }
+            
+            // 延迟后重新连接
+            setTimeout(() => {
+              console.log(`开始第 ${retryCount} 次重试连接 ${ip}...`);
+              
+              // 重置所有状态
+              connectionClosed = false;
+              loginPromptReceived = false;
+              passwordPromptReceived = false;
+              loginSuccessful = false;
+              isGettingDeviceId = false;
+              buffer.length = 0;  // 清空buffer
+              
+              // 设置新的超时
+              timer = setTimeout(() => {
+                console.log(`重试 #${retryCount} Telnet登录 ${ip}:23 超时`);
+                closeConnection(false, hadResponse);  // 如果仍有响应，可以继续尝试
+              }, timeout);
+              
+              // 重新建立连接
+              try {
+                socket = TcpSocket.createConnection({
+                  host: ip,
+                  port: 23,
+                  timeout: timeout / 2,
+                  localAddress: '0.0.0.0',
+                  noDelay: true,
+                  keepAlive: false
+                }, () => {
+                  console.log(`重试连接到 ${ip}:23, 等待登录提示...`);
+                });
+                
+                // 绑定数据事件处理器
+                socket.on('data', (data) => {
+                  if (connectionClosed) return;
+                  
+                  try {
+                    const text = data.toString('utf8');
+                    buffer.push(text);
+                    hadResponse = true;
+                    
+                    const fullText = buffer.join('');
+                    console.log(`重试中收到数据: ${text.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`);
+                    
+                    // 检测登录提示并发送用户名
+                    if (!loginPromptReceived && 
+                        (fullText.toLowerCase().includes('login:') || 
+                         fullText.toLowerCase().includes('username:'))) {
+                      console.log(`重试中检测到登录提示，发送用户名: ${credentials.username}`);
+                      socket.write(`${credentials.username}\r\n`);
+                      loginPromptReceived = true;
+                      return;
+                    }
+                    
+                    // 检测密码提示并发送密码
+                    if (loginPromptReceived && !passwordPromptReceived && 
+                        fullText.toLowerCase().includes('password:')) {
+                      console.log(`重试中检测到密码提示，发送密码`);
+                      socket.write(`${credentials.password}\r\n`);
+                      passwordPromptReceived = true;
+                      
+                      setTimeout(() => {
+                        if (!connectionClosed && !loginSuccessful) {
+                          sendExtraCommands();
+                        }
+                      }, 1000);
+                      return;
+                    }
+                    
+                    // 检查登录结果
+                    if (loginPromptReceived && passwordPromptReceived && !loginSuccessful && !isGettingDeviceId) {
+                      if (fullText.includes('#') || 
+                          fullText.includes('$') || 
+                          fullText.includes('>') ||
+                          fullText.includes('shell') ||
+                          fullText.includes('bash') ||
+                          fullText.includes('/bin/sh') ||
+                          fullText.includes('/bin/ash') ||
+                          fullText.includes('登录成功') ||
+                          fullText.includes('Welcome') ||
+                          fullText.includes('success')) {
+                        
+                        console.log(`重试登录成功! ${ip}:23`);
+                        loginSuccessful = true;
+                        isGettingDeviceId = true;
+                        
+                        // 重置超时计时器
+                        if (timer) {
+                          clearTimeout(timer);
+                        }
+                        timer = setTimeout(() => {
+                          console.log(`重试中获取设备ID超时 ${ip}:23`);
+                          closeConnection(true, false);
+                        }, 6000);
+                        
+                        // 登录成功后获取设备ID
+                        NetworkScanner.getDeviceId(ip, socket).then(id => {
+                          deviceId = id;
+                          closeConnection(true, false);
+                        }).catch(err => {
+                          console.error(`重试中获取设备ID失败: ${err.message}`);
+                          closeConnection(true, false);
+                        });
+                      }
+                    }
+                  } catch (e) {
+                    console.error(`重试中处理数据出错: ${e.message}`);
+                  }
+                });
+                
+                // 绑定错误和关闭事件
+                socket.on('error', (error) => {
+                  console.log(`重试中 ${ip} 连接错误: ${error.message}`);
+                  closeConnection(false, hadResponse);
+                });
+                
+                socket.on('close', (hadError) => {
+                  console.log(`重试中 ${ip} 连接关闭，错误状态: ${hadError}`);
+                  closeConnection(loginSuccessful, !loginSuccessful && hadResponse);
+                });
+                
+              } catch (e) {
+                console.error(`重试创建连接时出错: ${e.message}`);
+                closeConnection(false, false);
+              }
+            }, 500);  // 重试前等待500ms
+            
+          } else {
+            // 不重试，直接结束
+            if (socket) {
+              try {
+                socket.removeAllListeners();
+                socket.end();
+                
+                setTimeout(() => {
+                  try {
+                    if (socket) {
+                      socket.destroy();
+                      socket = null;
+                    }
+                  } catch (e) {
+                    console.error(`销毁socket时出错: ${e.message}`);
+                  } finally {
+                    resolve({success, deviceId});
+                  }
+                }, 50);
+              } catch (e) {
+                console.error(`关闭socket时出错: ${e.message}`);
+                resolve({success, deviceId});
+              }
+            } else {
               resolve({success, deviceId});
             }
-          } else {
-            resolve({success, deviceId});
           }
         }
       };
       
+      // 主超时定时器
       timer = setTimeout(() => {
         console.log(`Telnet登录 ${ip}:23 超时`);
-        closeConnection(false);
+        if (hadResponse) {
+          console.log(`${ip} 有响应但登录超时，符合重试条件`);
+          closeConnection(false, true);
+        } else {
+          console.log(`${ip} 无响应，不进行重试`);
+          closeConnection(false, false);
+        }
       }, timeout);
       
       try {
-        // 使用本地随机端口，避免TIME_WAIT问题
         socket = TcpSocket.createConnection({
           host: ip,
           port: 23,
           timeout: timeout / 2,
-          localAddress: '0.0.0.0', // 使用任意本地地址
-          noDelay: true, // 禁用Nagle算法，立即发送数据
+          localAddress: '0.0.0.0',
+          noDelay: true,
           keepAlive: false
         }, () => {
           console.log(`已连接到 ${ip}:23, 等待登录提示...`);
-          // 连接成功后等待一段时间再发送用户名
-          setTimeout(() => {
-            if (!connectionClosed) {
-              try {
-                console.log(`发送用户名: ${credentials.username}`);
-                socket.write(`${credentials.username}\r\n`);
-                loginPromptReceived = true;
-                
-                // 等待一段时间后发送密码
-                setTimeout(() => {
-                  if (!connectionClosed) {
-                    try {
-                      console.log(`发送密码`);
-                      socket.write(`${credentials.password}\r\n`);
-                      passwordPromptReceived = true;
-                    } catch (e) {
-                      console.error(`发送密码时出错: ${e.message}`);
-                      closeConnection(false);
-                    }
-                  }
-                }, 300);
-              } catch (e) {
-                console.error(`发送用户名时出错: ${e.message}`);
-                closeConnection(false);
-              }
-            }
-          }, 100);
+          // 不再自动发送用户名，而是等待数据事件中检测到登录提示
         });
         
         socket.on('data', (data) => {
-          if (connectionClosed) return; // 忽略已关闭连接的数据
+          if (connectionClosed) return;
           
           try {
             const text = data.toString('utf8');
             buffer.push(text);
-            const fullText = buffer.join('');
-            console.log(`${ip} 收到数据: ${text.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`);
+            hadResponse = true; // 标记有响应
             
-            // 只有在已发送用户名和密码后才检查登录结果
-            if (loginPromptReceived && passwordPromptReceived) {
+            const fullText = buffer.join('');
+            console.log(`收到数据: ${text.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`);
+            
+            // 检测登录提示并发送用户名
+            if (!loginPromptReceived && 
+                (fullText.toLowerCase().includes('login:') || 
+                 fullText.toLowerCase().includes('username:'))) {
+              console.log(`检测到登录提示，发送用户名: ${credentials.username}`);
+              socket.write(`${credentials.username}\r\n`);
+              loginPromptReceived = true;
+              return; // 发送用户名后返回，等待密码提示
+            }
+            
+            // 检测密码提示并发送密码
+            if (loginPromptReceived && !passwordPromptReceived && 
+                fullText.toLowerCase().includes('password:')) {
+              console.log(`检测到密码提示，发送密码`);
+              socket.write(`${credentials.password}\r\n`);
+              passwordPromptReceived = true;
+              
+              // 密码输入后等待一段时间，如果需要发送额外命令
+              setTimeout(() => {
+                if (!connectionClosed && !loginSuccessful) {
+                  sendExtraCommands();
+                }
+              }, 1000);
+              return;
+            }
+            
+            // 检查登录结果
+            if (loginPromptReceived && passwordPromptReceived && !loginSuccessful && !isGettingDeviceId) {
+              // 登录成功判断条件不变...
               if (fullText.includes('#') || 
                   fullText.includes('$') || 
-                  fullText.includes('>')) {
+                  fullText.includes('>') ||
+                  fullText.includes('shell') ||
+                  fullText.includes('bash') ||
+                  fullText.includes('/bin/sh') ||
+                  fullText.includes('/bin/ash') ||
+                  fullText.includes('登录成功') ||
+                  fullText.includes('Welcome') ||
+                  fullText.includes('success')) {
+                
                 console.log(`登录成功! ${ip}:23`);
                 loginSuccessful = true;
+                isGettingDeviceId = true;
+                
+                // 重置超时计时器
+                if (timer) {
+                  clearTimeout(timer);
+                }
+                timer = setTimeout(() => {
+                  console.log(`获取设备ID超时 ${ip}:23`);
+                  closeConnection(true, false);
+                }, 6000);
                 
                 // 登录成功后获取设备ID
                 this.getDeviceId(ip, socket).then(id => {
                   deviceId = id;
-                  closeConnection(true);
+                  closeConnection(true, false);
+                }).catch(err => {
+                  console.error(`获取设备ID失败: ${err.message}`);
+                  closeConnection(true, false);
                 });
               }
+              // 失败判断条件不变...
             }
           } catch (e) {
             console.error(`处理数据时出错: ${e.message}`);
@@ -384,18 +599,18 @@ export class NetworkScanner {
           console.log(`${ip} 连接错误 [${errorName}]: ${errorMsg}`);
           console.log(`错误堆栈: ${errorStack}`);
           
-          closeConnection(false);
+          closeConnection(false, false);
         });
         
         socket.on('close', (hadError) => {
           if (connectionClosed) return; // 忽略已关闭连接的事件
           
           console.log(`${ip} 连接关闭，错误状态: ${hadError}`);
-          closeConnection(loginSuccessful);
-        });
+          closeConnection(loginSuccessful, false);
+        }); 
       } catch (e) {
-        console.error(`创建连接时出错: ${e.message}, 堆栈: ${e.stack}`);
-        closeConnection(false);
+        console.error(`创建连接时出错: ${e.message}`);
+        closeConnection(false, false);
       }
     });
   }
@@ -559,6 +774,355 @@ export class NetworkScanner {
     return ip.split('.')
       .map(octet => parseInt(octet))
       .reduce((acc, octet) => (acc << 8) + octet, 0) >>> 0;
+  }
+
+  // 添加一个执行命令序列的专用方法
+  static async executeCommandSequence(ip, commands, credentials = this.TELNET_CREDENTIALS, timeout = 10000) {
+    console.log(`准备在 ${ip} 上执行 ${commands.length} 个命令...`);
+    
+    return new Promise(async (resolve, reject) => {
+      let socket = null;
+      let connectionActive = false;
+      let loginSuccessful = false;
+      let commandIndex = 0;
+      let buffer = [];
+      let commandTimer = null;
+      let globalTimer = null;
+      
+      // 设置全局操作超时
+      globalTimer = setTimeout(() => {
+        console.error(`在 ${ip} 上执行命令序列超时`);
+        cleanup();
+        reject(new Error("命令序列执行超时"));
+      }, timeout * 2);  // 给整个序列双倍时间
+      
+      // 清理函数
+      const cleanup = () => {
+        if (commandTimer) {
+          clearTimeout(commandTimer);
+          commandTimer = null;
+        }
+        
+        if (globalTimer) {
+          clearTimeout(globalTimer);
+          globalTimer = null;
+        }
+        
+        if (socket) {
+          try {
+            socket.removeAllListeners();
+            socket.end();
+            setTimeout(() => {
+              try {
+                if (socket) {
+                  socket.destroy();
+                  socket = null;
+                }
+              } catch (e) {}
+            }, 100);
+          } catch (e) {}
+        }
+        
+        connectionActive = false;
+      };
+      
+      // 发送下一个命令
+      const sendNextCommand = () => {
+        if (!connectionActive || !loginSuccessful) {
+          console.error(`无法发送命令，连接状态: ${connectionActive}, 登录状态: ${loginSuccessful}`);
+          cleanup();
+          reject(new Error("连接或登录状态异常"));
+          return;
+        }
+        
+        if (commandIndex >= commands.length) {
+          console.log(`所有命令执行完成 (${commands.length}/${commands.length})`);
+          cleanup();
+          resolve(true);
+          return;
+        }
+        
+        const command = commands[commandIndex];
+        console.log(`执行命令------》 (${commandIndex+1}/${commands.length}): ${command}`);
+        
+        buffer = []; // 清空缓冲区
+        
+        try {
+          socket.write(`${command}\r\n`);
+          
+          // 设置单个命令超时
+          if (commandTimer) clearTimeout(commandTimer);
+          commandTimer = setTimeout(() => {
+            console.error(`命令超时: ${command}`);
+            commandIndex++; // 跳过这个命令
+            sendNextCommand();
+          }, timeout);
+          
+        } catch (e) {
+          console.error(`发送命令出错: ${e.message}`);
+          cleanup();
+          reject(new Error(`发送命令出错: ${e.message}`));
+        }
+      };
+      
+      // 连接和事件处理
+      try {
+        console.log(`为执行命令序列连接到 ${ip}:23...`);
+        
+        socket = TcpSocket.createConnection({
+          host: ip,
+          port: 23,
+          timeout: timeout / 2,
+          localAddress: '0.0.0.0',
+          noDelay: true,
+          keepAlive: true  // 保持连接活跃
+        }, () => {
+          console.log(`命令序列连接已建立，等待登录提示...`);
+          connectionActive = true;
+        });
+        
+        // 处理数据接收
+        socket.on('data', (data) => {
+          try {
+            const text = data.toString('utf8');
+            buffer.push(text);
+            console.log(`命令输出: ${text.replace(/\n/g, '\\n').replace(/\r/g, '\\r')}`);
+            
+            const fullText = buffer.join('');
+            
+            // 未登录时，处理登录过程
+            if (!loginSuccessful) {
+              // 检测登录提示并发送用户名
+              if (fullText.toLowerCase().includes('login:') || 
+                  fullText.toLowerCase().includes('username:')) {
+                console.log(`发送用户名: ${credentials.username}`);
+                socket.write(`${credentials.username}\r\n`);
+                return;
+              }
+              
+              // 检测密码提示并发送密码
+              if (fullText.toLowerCase().includes('password:')) {
+                console.log(`发送密码`);
+                socket.write(`${credentials.password}\r\n`);
+                return;
+              }
+              
+              // 检测登录成功
+              if (fullText.includes('#') || 
+                  fullText.includes('$') || 
+                  fullText.includes('>')) {
+                console.log(`命令序列登录成功`);
+                loginSuccessful = true;
+                // 开始发送命令
+                sendNextCommand();
+                return;
+              }
+            } 
+            // 已登录，处理命令响应
+            else {
+              // 检测命令提示符，表示命令执行完成
+              if (fullText.includes('#') || 
+                  fullText.includes('$') || 
+                  fullText.includes('>')) {
+                
+                // 清除命令超时
+                if (commandTimer) {
+                  clearTimeout(commandTimer);
+                  commandTimer = null;
+                }
+                
+                // 处理命令输出
+                const output = fullText.trim();
+                console.log(`命令 ${commandIndex+1} 执行完成，输出: ${output.length} 字符`);
+                
+                // 移动到下一个命令
+                commandIndex++;
+                setTimeout(sendNextCommand, 200); // 短暂延迟避免太快发送下一命令
+              }
+            }
+          } catch (e) {
+            console.error(`处理数据出错: ${e.message}`);
+            cleanup();
+            reject(new Error(`处理数据出错: ${e.message}`));
+          }
+        });
+        
+        // 错误处理
+        socket.on('error', (error) => {
+          console.error(`命令序列连接错误: ${error.message}`);
+          cleanup();
+          reject(new Error(`连接错误: ${error.message}`));
+        });
+        
+        socket.on('close', () => {
+          console.log(`命令序列连接关闭`);
+          connectionActive = false;
+          if (commandIndex < commands.length) {
+            cleanup();
+            reject(new Error("连接意外关闭"));
+          }
+        });
+        
+      } catch (e) {
+        console.error(`创建命令序列连接出错: ${e.message}`);
+        cleanup();
+        reject(new Error(`创建连接出错: ${e.message}`));
+      }
+    });
+  }
+
+  // 修正检查设备版本和配置路径的方法
+  static async checkDeviceVersion(ip, credentials = this.TELNET_CREDENTIALS) {
+    console.log(`检查 ${ip} 的设备版本...`);
+    
+    try {
+      // 检查是否为新系统 - 通过/tmp/app_versions文件判断
+      const versionCheckCommand = "ls -la /tmp/app_versions 2>/dev/null && echo 'NEW_SYSTEM' || echo 'OLD_SYSTEM'";
+      const versionResult = await this.executeCommand(ip, versionCheckCommand, credentials);
+      
+      console.log(`系统类型检查结果: ${versionResult}`);
+      
+      // 根据检查结果确定配置路径
+      let configPath = null;
+      let logPath = null;
+      let isNewSystem = false;
+      
+      if (versionResult.includes('NEW_SYSTEM')) {
+        // 新系统 - 有/tmp/app_versions文件
+        configPath = '/customer/config/mqtt.ini';
+        logPath = '/customer/log/mqtt.log';
+        isNewSystem = true;
+        console.log(`设备使用新系统, 配置路径: ${configPath}, 日志路径: ${logPath}`);
+      } else {
+        // 旧系统 - 没有/tmp/app_versions文件
+        configPath = '/software/mqtt.ini';
+        logPath = '/software/mqtt/mymqtt.log';
+        console.log(`设备使用旧系统, 配置路径: ${configPath}, 日志路径: ${logPath}`);
+      }
+      
+      // 验证配置文件是否存在
+      const configCheckCommand = `ls -la ${configPath} 2>/dev/null && echo 'CONFIG_EXISTS' || echo 'CONFIG_NOT_FOUND'`;
+      const configResult = await this.executeCommand(ip, configCheckCommand, credentials);
+      
+      if (configResult.includes('CONFIG_NOT_FOUND')) {
+        console.error(`警告: 配置文件 ${configPath} 不存在`);
+        
+        // 尝试查找配置文件
+        const findCommand = "find / -name mqtt.ini 2>/dev/null | head -n 1";
+        const findResult = await this.executeCommand(ip, findCommand, credentials);
+        
+        if (findResult && findResult.trim().length > 0) {
+          configPath = findResult.trim();
+          console.log(`已找到替代配置文件: ${configPath}`);
+        } else {
+          throw new Error(`找不到配置文件，无法继续操作`);
+        }
+      }
+      
+      return {
+        configPath,
+        logPath,
+        isNewSystem
+      };
+    } catch (e) {
+      console.error(`检查设备版本出错: ${e.message}`);
+      throw e;
+    }
+  }
+
+  // 使用修正后的逻辑改进切换版本方法
+  static async switchToOverseasVersion(ip, credentials = this.TELNET_CREDENTIALS) {
+    console.log(`尝试将设备 ${ip} 切换到海外版...`);
+    
+    try {
+      // 首先检查设备版本和配置文件位置 - 使用正确的判断标准
+      const versionInfo = await this.checkDeviceVersion(ip, credentials);
+      console.log(`设备版本信息: ${JSON.stringify(versionInfo)}`);
+      
+      const configPath = versionInfo.configPath;
+      const logPath = versionInfo.logPath;
+      const isNewSystem = versionInfo.isNewSystem;
+      
+      if (!configPath) {
+        throw new Error("无法确定配置文件路径");
+      }
+      
+      // 准备命令序列 - 更详细且带验证步骤
+      const commands = [
+        // 1. 显示当前配置
+        `echo "当前配置:"`,
+        `cat ${configPath}`,
+        
+        // 2. 备份当前配置
+        `cp ${configPath} ${configPath}.bak`,
+        
+        // 3. 使用sed修改配置 - 更精确的替换
+        `sed -i 's|en_host=.*|en_host=cloud-service-us.austinelec.com|g' ${configPath}`,
+        
+        // 4. 确认修改后的配置
+        `echo "修改后配置:"`,
+        `cat ${configPath}`,
+        
+        // 5. 停止服务 - 根据系统类型选择命令
+        isNewSystem 
+          ? `killall -9 mqtt_client || echo "服务未运行"`
+          : `killall -9 mymqtt || kill -9 $(pidof mymqtt) || echo "服务未运行"`,
+        
+        // 6. 等待片刻
+        `echo "等待服务重启..."`,
+        `sleep 2`,
+        
+        // 7. 确认配置再次
+        `grep "en_host=" ${configPath}`,
+      ];
+      
+      // 执行命令序列
+      console.log(`准备执行 ${commands.length} 个命令来切换到海外版...`);
+      await this.executeCommandSequence(ip, commands, credentials, 30000);
+      
+      // 最终配置验证
+      const finalCheck = await this.executeCommand(ip, 
+        `grep "en_host=cloud-service-us.austinelec.com" ${configPath}`,
+        credentials
+      );
+      
+      if (finalCheck.includes("cloud-service-us.austinelec.com")) {
+        console.log(`✓ 最终验证通过: ${finalCheck}`);
+        return {
+          success: true,
+          message: `设备 ${ip} 已成功切换到海外版`
+        };
+      } else {
+        console.error(`✗ 最终验证失败: ${finalCheck}`);
+        return {
+          success: false,
+          message: "配置修改未成功应用，请检查设备"
+        };
+      }
+    } catch (error) {
+      console.error(`切换版本出错: ${error}`);
+      return {
+        success: false,
+        message: `切换版本失败: ${error.message}`
+      };
+    }
+  }
+
+  // 增加配置检查方法
+  static async verifyConfiguration(ip, credentials = this.TELNET_CREDENTIALS) {
+    try {
+      const commands = [
+        // 检查可能的配置文件位置
+        "ls -la /software/mqtt.ini || ls -la /customer/config/mqtt.ini || ls -la /etc/mqtt.ini",
+        "cat /software/mqtt.ini 2>/dev/null || cat /customer/config/mqtt.ini 2>/dev/null || cat /etc/mqtt.ini 2>/dev/null"
+      ];
+      
+      await this.executeCommandSequence(ip, commands, credentials, 10000);
+      return true;
+    } catch (e) {
+      console.error(`验证配置出错: ${e.message}`);
+      return false;
+    }
   }
 }
 

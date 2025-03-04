@@ -19,7 +19,7 @@ export class VersionSwitcher {
   static async checkSystemVersion(ip) {
     try {
       const result = await TelnetCommand.executeCommands(ip, [
-        { cmd: 'ls -la /tmp/app_version' }
+        { cmd: 'ls -la /tmp/app_versions' }
       ]);
       
       // 检查命令执行结果
