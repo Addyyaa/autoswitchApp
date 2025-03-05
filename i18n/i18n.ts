@@ -9,58 +9,73 @@ const getDeviceLanguage = () => {
   let deviceLanguage;
   
   if (Platform.OS === 'ios') {
-    deviceLanguage = NativeModules.LanguageManager?.language || 
-                   NativeModules.SettingsManager?.settings?.AppleLocale || 
-                   NativeModules.SettingsManager?.settings?.AppleLanguages?.[0];
-  } else {
-    // Android 的语言检测更新 - 尝试多种方法
+    // iOS 语言检测
     deviceLanguage = 
-      NativeModules.I18nManager?.localeIdentifier ||
-      NativeModules.I18nManager?.locale ||
-      NativeModules.SettingsManager?.settings?.locale ||
-      'zh';
-    
-    console.log('Android 原始语言值:', deviceLanguage);
+      NativeModules.LanguageManager?.language ||
+      NativeModules.SettingsManager?.settings?.AppleLocale ||
+      NativeModules.SettingsManager?.settings?.AppleLanguages?.[0];
+      
+    console.log('iOS 原始语言值:', deviceLanguage);
+  } else {
+    // 改进 Android 语言检测
+    try {
+      deviceLanguage = 
+        NativeModules.I18nManager?.localeIdentifier ||
+        NativeModules.I18nManager?.locale ||
+        NativeModules.Settings?.settings?.locale ||
+        NativeModules.ApplicationLanguages?.getLocales()?.[0]?.languageCode;
+        
+      console.log('Android 原始语言值:', deviceLanguage);
+    } catch (error) {
+      console.log('获取 Android 语言时出错:', error);
+      deviceLanguage = 'en'; // 默认使用英语
+    }
   }
   
-  console.log('设备语言原始值:', deviceLanguage);
-  
-  // 处理语言代码格式
+  // 标准化语言代码
   if (deviceLanguage) {
-    // 处理类似 zh-CN, zh_CN, zh_Hans_CN 等格式
-    if (deviceLanguage.includes('-')) {
-      deviceLanguage = deviceLanguage.split('-')[0];
-    }
-    if (deviceLanguage.includes('_')) {
-      deviceLanguage = deviceLanguage.split('_')[0];
+    // 移除区域代码，只保留语言代码
+    let languageCode = deviceLanguage.toLowerCase();
+    
+    // 处理各种格式的语言代码
+    if (languageCode.includes('-')) {
+      languageCode = languageCode.split('-')[0];
+    } else if (languageCode.includes('_')) {
+      languageCode = languageCode.split('_')[0];
     }
     
-    // 如果检测到 zh 的任何变体，统一返回 zh
-    if (deviceLanguage.toLowerCase().startsWith('zh')) {
-      return 'zh';
-    }
+    console.log('处理后的语言代码:', languageCode);
     
-    return deviceLanguage.slice(0, 2).toLowerCase();
+    // 验证语言代码是否在支持的语言列表中
+    if (['en', 'zh'].includes(languageCode)) {
+      return languageCode;
+    }
   }
   
-  return 'en'; // 默认返回英文
+  // 默认返回英文
+  return 'en';
 };
 
+// 初始化前先打印检测到的语言
 const detectedLanguage = getDeviceLanguage();
-console.log('检测到的语言代码:', detectedLanguage);
+console.log('最终使用的语言代码:', detectedLanguage);
 
 i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
     zh: { translation: zh },
   },
-  lng: detectedLanguage, // 使用检测到的语言
-  fallbackLng: 'en', // 回退语言
+  lng: detectedLanguage,
+  fallbackLng: 'en',
   interpolation: {
     escapeValue: false,
   },
+  debug: true, // 开启调试模式，方便查看语言切换问题
 });
 
-console.log('i18n当前使用的语言:', i18n.language);
+// 监听语言变化
+i18n.on('languageChanged', (lng) => {
+  console.log('语言已切换到:', lng);
+});
 
 export default i18n; 
