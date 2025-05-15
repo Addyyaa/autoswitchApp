@@ -21,7 +21,8 @@ export default {
     ip: 'IP:',
     telnetDevice: 'Telnet设备',
     unknownDevice: '未知设备',
-    openPorts: '开放端口:'
+    openPorts: '开放端口:',
+    title: '设备扫描'
   },
   pleaseWait: '请耐心等待，这可能需要几分钟...',
   scanErrorMessage: '扫描过程中出错: {{message}}',

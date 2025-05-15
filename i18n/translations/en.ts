@@ -21,7 +21,8 @@ export default {
     ip: 'IP:',
     telnetDevice: 'Telnet Device',
     unknownDevice: 'Unknown Device',
-    openPorts: 'Open Ports:'
+    openPorts: 'Open Ports:',
+    title: 'Device Scanner'
   },
   pleaseWait: 'Please wait, this might take a few minutes...',
   scanErrorMessage: 'Error occurred during scanning: {{message}}',

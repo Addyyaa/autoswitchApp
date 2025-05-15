@@ -1,5 +1,6 @@
 import { NetworkInfo } from 'react-native-network-info';
 import TcpSocket from 'react-native-tcp-socket';
+import { TelnetScanner } from 'react-native-telnet-scanner';
 
 export class NetworkScanner {
   // Telnet验证凭据

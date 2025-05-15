@@ -1,0 +1,11 @@
+# 忽略 build 目录
+/build/
+
+# 忽略 dist 目录
+/dist/
+
+# 忽略 node_modules 库文件夹
+/node_modules/
+
+# 如果有其他特定的库文件也可以在此处添加，例如 *.jar 对于 Java 库文件
+*.jar

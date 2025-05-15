@@ -68,12 +68,20 @@ export const DeviceScanner = () => {
   useEffect(() => {
     const fetchNetworkInfo = async () => {
       try {
-        const ip = await NetworkScanner.getLocalIp();
-        const subnet = await NetworkScanner.getSubnetMask();
-        setLocalIP(ip);
-        setSubnetMask(subnet);
+        if (NetworkScanner && typeof NetworkScanner.getLocalIp === 'function') {
+          const ip = await NetworkScanner.getLocalIp();
+          const subnet = await NetworkScanner.getSubnetMask();
+          setLocalIP(ip || '未知');
+          setSubnetMask(subnet || '未知');
+        } else {
+          console.log('网络扫描功能不可用');
+          setLocalIP('不可用');
+          setSubnetMask('不可用');
+        }
       } catch (error) {
         console.error('获取网络信息出错:', error);
+        setLocalIP('获取失败');
+        setSubnetMask('获取失败');
       }
     };
     
